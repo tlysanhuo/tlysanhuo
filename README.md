@@ -2,6 +2,8 @@
 
 Student @ BIT · Building practical AI agents and research tools.
 
+<!-- profile-readme -->
+
 <p align="center">
   <a href="https://github.com/search?q=author%3Atlysanhuo+-user%3Atlysanhuo&type=pullrequests">
     <picture>
