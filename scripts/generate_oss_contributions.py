@@ -33,8 +33,6 @@ THEMES = {
         "accent": "#8250df",
         "accent_soft": "#d8b9ff",
         "merged": "#1a7f37",
-        "open": "#bf8700",
-        "closed": "#cf222e",
     },
     "dark": {
         "background": "#0d1117",
@@ -47,8 +45,6 @@ THEMES = {
         "accent": "#a371f7",
         "accent_soft": "#6e40c9",
         "merged": "#3fb950",
-        "open": "#d29922",
-        "closed": "#f85149",
     },
 }
 
@@ -67,8 +63,8 @@ def github_api(path: str) -> dict:
         return json.load(response)
 
 
-def search_pull_requests() -> list[dict]:
-    query = f"type:pr author:{PROFILE_USER} -user:{PROFILE_USER}"
+def search_merged_pull_requests() -> list[dict]:
+    query = f"type:pr author:{PROFILE_USER} -user:{PROFILE_USER} is:merged"
     items: list[dict] = []
     page = 1
     while True:
@@ -92,12 +88,6 @@ def search_pull_requests() -> list[dict]:
 
 def repository_name(pull_request: dict) -> str:
     return pull_request["repository_url"].split("/repos/", maxsplit=1)[1]
-
-
-def pull_request_state(pull_request: dict) -> str:
-    if pull_request["pull_request"]["merged_at"]:
-        return "merged"
-    return "open" if pull_request["state"] == "open" else "closed"
 
 
 def pull_request_kind(title: str) -> str:
@@ -142,9 +132,11 @@ def escape(value: object) -> str:
 
 
 def collect_data() -> dict:
-    pull_requests = search_pull_requests()
+    pull_requests = search_merged_pull_requests()
     if not pull_requests:
-        raise RuntimeError(f"No community pull requests found for @{PROFILE_USER}")
+        raise RuntimeError(
+            f"No merged community pull requests found for @{PROFILE_USER}"
+        )
 
     grouped: dict[str, list[dict]] = collections.defaultdict(list)
     for pull_request in pull_requests:
@@ -161,14 +153,10 @@ def collect_data() -> dict:
                 key=lambda item: item["created_at"],
             ),
             "last": max(
-                parse_timestamp(item["created_at"])
-                for item in repository_pull_requests
+                parse_timestamp(item["created_at"]) for item in repository_pull_requests
             ),
         }
 
-    states = collections.Counter(
-        pull_request_state(pull_request) for pull_request in pull_requests
-    )
     ordered_repositories = sorted(
         repositories.values(),
         key=lambda item: (
@@ -180,9 +168,7 @@ def collect_data() -> dict:
 
     current_month = dt.datetime.now(dt.timezone.utc).date().replace(day=1)
     months = [add_months(current_month, offset) for offset in range(-11, 1)]
-    monthly_pull_requests = {
-        (month.year, month.month): [] for month in months
-    }
+    monthly_pull_requests = {(month.year, month.month): [] for month in months}
     for pull_request in pull_requests:
         key = month_key(pull_request["created_at"])
         if key in monthly_pull_requests:
@@ -191,7 +177,6 @@ def collect_data() -> dict:
     return {
         "pull_requests": pull_requests,
         "repositories": ordered_repositories,
-        "states": states,
         "months": months,
         "monthly_pull_requests": monthly_pull_requests,
     }
@@ -247,11 +232,10 @@ def render_timeline(data: dict, theme: dict) -> str:
                 f'width="24" height="{baseline - y:.1f}" rx="8"/>'
             )
             dot_gap = min(15.0, (baseline - y - 12) / max(count - 1, 1))
-            for dot_index, pull_request in enumerate(pull_requests):
+            for dot_index, _ in enumerate(pull_requests):
                 dot_y = baseline - 8 - dot_index * dot_gap
-                state = pull_request_state(pull_request)
                 dots.append(
-                    f'<circle class="state-dot {state}" cx="{x:.1f}" '
+                    f'<circle class="state-dot merged" cx="{x:.1f}" '
                     f'cy="{dot_y:.1f}" r="4.2"/>'
                 )
 
@@ -272,23 +256,15 @@ def render_timeline(data: dict, theme: dict) -> str:
                 )
             )
 
-    area_points = (
-        f"{x_start},{baseline} "
-        + " ".join(points)
-        + f" {x_end},{baseline}"
-    )
+    area_points = f"{x_start},{baseline} " + " ".join(points) + f" {x_end},{baseline}"
     grid = []
     for line_index in range(4):
         y = baseline - plot_height * line_index / 3
-        grid.append(
-            f'<line x1="42" y1="{y:.1f}" x2="798" y2="{y:.1f}" class="grid"/>'
-        )
+        grid.append(f'<line x1="42" y1="{y:.1f}" x2="798" y2="{y:.1f}" class="grid"/>')
 
     peak_index = max(
         range(len(months)),
-        key=lambda index: len(
-            monthly[(months[index].year, months[index].month)]
-        ),
+        key=lambda index: len(monthly[(months[index].year, months[index].month)]),
     )
     peak_month = months[peak_index]
     peak_count = len(monthly[(peak_month.year, peak_month.month)])
@@ -298,31 +274,16 @@ def render_timeline(data: dict, theme: dict) -> str:
     peak_label_x = min(max(peak_x, 120), 716)
 
     legend_y = 392
-    legend = [
-        (
-            "merged",
-            data["states"]["merged"],
-            "已合并",
-            "merged",
-            548,
+    legend_nodes = [
+        f'<circle cx="684" cy="{legend_y - 4}" r="4.5" class="merged"/>',
+        render_switch(
+            694,
+            legend_y,
+            "legend",
+            f"仅统计已合并 ×{len(data['pull_requests'])}",
+            f"MERGED ONLY ×{len(data['pull_requests'])}",
         ),
-        ("open", data["states"]["open"], "开放", "open", 652),
-        ("closed", data["states"]["closed"], "已关闭", "closed", 736),
     ]
-    legend_nodes = []
-    for state, count, chinese, english, x in legend:
-        legend_nodes.append(
-            f'<circle cx="{x}" cy="{legend_y - 4}" r="4.5" class="{state}"/>'
-        )
-        legend_nodes.append(
-            render_switch(
-                x + 10,
-                legend_y,
-                "legend",
-                f"{chinese} ×{count}",
-                f"{english} ×{count}",
-            )
-        )
 
     peak_chinese = f"{peak_count} PRs · {peak_month.year}年{peak_month.month}月"
     peak_english = f"{peak_count} PRs · {calendar.month_abbr[peak_month.month].upper()} {peak_month.year}"
@@ -361,8 +322,7 @@ def render_repository_rows(data: dict) -> tuple[str, int]:
         y = start_y + index * row_height
         pull_requests = repository["pull_requests"]
         kinds = collections.Counter(
-            pull_request_kind(pull_request["title"])
-            for pull_request in pull_requests
+            pull_request_kind(pull_request["title"]) for pull_request in pull_requests
         )
         kind_text = " · ".join(
             f"{kind} ×{count}"
@@ -379,20 +339,17 @@ def render_repository_rows(data: dict) -> tuple[str, int]:
             f'<rect x="30" y="{y - 15}" width="780" height="20" rx="5" class="row-bg"/>'
             f'<text x="42" y="{y}" class="repo-name">{escape(truncate(repository["name"], 38))}</text>'
             f'<text x="374" y="{y}" class="repo-num" text-anchor="end">'
-            f'{escape(format_count(repository["stars"]))}</text>'
+            f"{escape(format_count(repository['stars']))}</text>"
         )
 
         dot_x = 424
-        for pull_request in pull_requests[:8]:
-            state = pull_request_state(pull_request)
-            nodes.append(
-                f'<circle cx="{dot_x}" cy="{y - 4}" r="4.2" class="{state}"/>'
-            )
+        for _ in pull_requests[:8]:
+            nodes.append(f'<circle cx="{dot_x}" cy="{y - 4}" r="4.2" class="merged"/>')
             dot_x += 13
         if len(pull_requests) > 8:
             nodes.append(
                 f'<text x="{dot_x + 2}" y="{y}" class="repo-num">'
-                f'+{len(pull_requests) - 8}</text>'
+                f"+{len(pull_requests) - 8}</text>"
             )
 
         last = repository["last"]
@@ -436,38 +393,39 @@ def render_svg(data: dict, theme_name: str) -> str:
     theme = THEMES[theme_name]
     pull_request_count = len(data["pull_requests"])
     repository_count = len(data["repositories"])
-    merged_count = data["states"]["merged"]
     repository_rows, footer_y = render_repository_rows(data)
-    height = max(748, footer_y + 12)
+    height = max(620, footer_y + 12)
 
     timeline = render_timeline(data, theme)
     subtitle = render_switch(
         43,
         72,
         "subtitle",
-        f"社区 Pull Requests · @{PROFILE_USER}",
-        f"COMMUNITY PULL REQUESTS · @{PROFILE_USER}",
+        f"已合并的社区 Pull Requests · @{PROFILE_USER}",
+        f"MERGED COMMUNITY PULL REQUESTS · @{PROFILE_USER}",
     )
     summary = render_switch(
         816,
         74,
         "hero-label",
-        f"{repository_count} 个项目 · {merged_count} 项已合并",
-        f"{repository_count} PROJECTS · {merged_count} MERGED",
+        f"{repository_count} 个上游项目 · 全部已合并",
+        f"{repository_count} UPSTREAM PROJECTS · ALL MERGED",
         anchor="end",
     )
 
     table_headers = "".join(
         [
-            render_switch(40, 438, "panel-label", "参与的开源仓库", "UPSTREAM REPOSITORIES"),
+            render_switch(
+                40, 438, "panel-label", "参与的开源仓库", "UPSTREAM REPOSITORIES"
+            ),
             render_switch(374, 438, "axis", "星标", "STARS", anchor="end"),
-            render_switch(424, 438, "axis", "PR 记录", "PULL REQUESTS"),
+            render_switch(424, 438, "axis", "已合并 PR", "MERGED PRS"),
             render_switch(584, 438, "axis", "类型", "TYPES"),
             render_switch(798, 438, "axis", "最近", "LAST", anchor="end"),
         ]
     )
 
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="840" height="{height}" viewBox="0 0 840 {height}" role="img" aria-label="Open source contributions: {pull_request_count} pull requests across {repository_count} projects, {merged_count} merged">
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="840" height="{height}" viewBox="0 0 840 {height}" role="img" aria-label="Open source contributions: {pull_request_count} merged pull requests across {repository_count} upstream projects">
   <defs>
     <linearGradient id="hero-gradient" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="{theme["accent"]}"/>
@@ -499,8 +457,6 @@ def render_svg(data: dict, theme_name: str) -> str:
     .row-bg {{ fill: {theme["panel"]}; opacity: 0; }}
     .repo-row:hover .row-bg {{ opacity: 1; }}
     .merged {{ fill: {theme["merged"]}; }}
-    .open {{ fill: {theme["open"]}; }}
-    .closed {{ fill: {theme["closed"]}; }}
     .state-dot {{ stroke: {theme["background"]}; stroke-width: 1.3; }}
     .card {{ fill: {theme["background"]}; stroke: {theme["border"]}; stroke-width: 1; }}
     .divider {{ stroke: {theme["border"]}; stroke-width: 1; }}
@@ -509,7 +465,7 @@ def render_svg(data: dict, theme_name: str) -> str:
   <text x="24" y="50" class="title">OPEN SOURCE CONTRIBUTIONS</text>
   <circle cx="29" cy="68" r="4" fill="{theme["accent"]}"/>
   {subtitle}
-  <text x="816" y="54" class="hero" text-anchor="end">{pull_request_count} PRs</text>
+  <text x="816" y="54" class="hero" text-anchor="end">{pull_request_count} MERGED</text>
   {summary}
   {timeline}
   <line x1="24" y1="414" x2="816" y2="414" class="divider"/>
