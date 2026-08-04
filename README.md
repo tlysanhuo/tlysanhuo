@@ -1,4 +1,4 @@
-# Hi, I'm Sanhuo 👋
+# Hi, I'm sanhuo 👋
 
 Student at Beijing Institute of Technology (BIT), building reliable AI agents and developer tools.
 
