@@ -1,4 +1,4 @@
-# Hi, I'm sanhuo 👋
+# Hi, I'm Sanhuo 👋
 
 Student at Beijing Institute of Technology (BIT), building reliable AI agents and developer tools.
 
@@ -7,7 +7,7 @@ I focus on agent runtime correctness, observability, and reproducible evaluation
 ## Selected engineering contributions
 
 - **[Goose — GenAI semantic-convention telemetry](https://github.com/aaif-goose/goose/pull/10700):** added standardized OpenTelemetry attributes to model and tool spans while preserving stable message IDs. **Merged.**
-- **[Qwen Code — inline terminal image rendering](https://github.com/QwenLM/qwen-code/pull/8305):** renders assistant and tool PNGs through native Kitty/Ghostty placement or a `chafa` fallback while preserving stream order. **In review.**
+- **[Qwen Code — inline terminal image rendering](https://github.com/QwenLM/qwen-code/pull/8305):** renders assistant and tool PNGs through native Kitty/Ghostty placement or a `chafa` fallback while preserving stream order. **Merged.**
 - **[Gemini CLI — diff-aware `@` processing](https://github.com/google-gemini/gemini-cli/pull/28581):** prevents unified and combined diff hunk markers from triggering recursive workspace scans. **In review.**
 - **[OpenHands — concurrent streaming message order](https://github.com/OpenHands/OpenHands/pull/16119):** keeps queued user messages correctly positioned across overlapping main-agent and planning-agent streams. **In review.**
 - **[NanoClaw — legacy wiring migration](https://github.com/nanocoai/nanoclaw/pull/3145):** backfills missing channel destinations without overwriting existing names. **In review.**
