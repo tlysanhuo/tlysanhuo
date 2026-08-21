@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the light and dark open-source contribution cards."""
+"""Generate open-source contribution cards and clickable repository links."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import datetime as dt
 import html
 import json
 import os
-import re
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -19,17 +18,19 @@ PROFILE_USER = os.environ.get("PROFILE_USER", "tlysanhuo")
 GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
 API_ROOT = "https://api.github.com"
 OUTPUT_DIR = Path(__file__).resolve().parents[1] / "assets"
+README_PATH = Path(__file__).resolve().parents[1] / "README.md"
 VISIBLE_REPOSITORIES = 12
+VISIBLE_PULL_REQUEST_LINKS = 6
+REPOSITORIES_START = "<!-- oss-repositories:start -->"
+REPOSITORIES_END = "<!-- oss-repositories:end -->"
 
 THEMES = {
     "light": {
         "background": "#ffffff",
-        "panel": "#f6f8fa",
         "border": "#d0d7de",
         "text": "#1f2328",
         "muted": "#656d76",
         "grid": "#d8dee4",
-        "zero": "#ebedf0",
         "accent": "#8250df",
         "hero_start": "#8250df",
         "hero_end": "#0969da",
@@ -37,12 +38,10 @@ THEMES = {
     },
     "dark": {
         "background": "#0d1117",
-        "panel": "#161b22",
         "border": "#30363d",
         "text": "#f0f6fc",
         "muted": "#8b949e",
         "grid": "#30363d",
-        "zero": "#21262d",
         "accent": "#a371f7",
         "hero_start": "#d2a8ff",
         "hero_end": "#58a6ff",
@@ -92,17 +91,6 @@ def repository_name(pull_request: dict) -> str:
     return pull_request["repository_url"].split("/repos/", maxsplit=1)[1]
 
 
-def pull_request_kind(title: str) -> str:
-    match = re.match(r"^([a-zA-Z]+)(?:\([^)]*\))?!?:", title.strip())
-    kind = match.group(1).lower() if match else "other"
-    aliases = {
-        "feature": "feat",
-        "bugfix": "fix",
-        "documentation": "docs",
-    }
-    return aliases.get(kind, kind)
-
-
 def parse_timestamp(value: str) -> dt.datetime:
     return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
 
@@ -117,20 +105,86 @@ def month_key(value: str) -> tuple[int, int]:
     return timestamp.year, timestamp.month
 
 
-def format_count(value: int) -> str:
-    if value >= 1_000_000:
-        return f"{value / 1_000_000:.1f}M"
-    if value >= 1_000:
-        return f"{value / 1_000:.1f}K"
-    return str(value)
-
-
-def truncate(value: str, limit: int) -> str:
-    return value if len(value) <= limit else f"{value[: limit - 1]}…"
-
-
 def escape(value: object) -> str:
     return html.escape(str(value), quote=True)
+
+
+def repository_pull_requests_url(repository_name: str) -> str:
+    params = urllib.parse.urlencode(
+        {"q": f"is:pr is:merged author:{PROFILE_USER}"}
+    )
+    return f"https://github.com/{repository_name}/pulls?{params}"
+
+
+def all_pull_requests_url() -> str:
+    params = urllib.parse.urlencode(
+        {
+            "q": f"type:pr author:{PROFILE_USER} -user:{PROFILE_USER} is:merged",
+            "type": "pullrequests",
+        }
+    )
+    return f"https://github.com/search?{params}"
+
+
+def render_repository_markdown(data: dict) -> str:
+    repositories = data["repositories"]
+    visible = repositories[:VISIBLE_REPOSITORIES]
+    lines = [
+        "| Repository | Merged PRs | Latest |",
+        "| :--- | :--- | ---: |",
+    ]
+
+    for repository in visible:
+        pull_requests = sorted(
+            repository["pull_requests"],
+            key=lambda item: item["created_at"],
+            reverse=True,
+        )
+        repository_url = repository_pull_requests_url(repository["name"])
+        repository_target = (
+            pull_requests[0]["html_url"]
+            if len(pull_requests) == 1
+            else repository_url
+        )
+        repository_link = f'[{repository["name"]}]({repository_target})'
+
+        pull_request_links = [
+            f'[#{pull_request["number"]}]({pull_request["html_url"]})'
+            for pull_request in pull_requests[:VISIBLE_PULL_REQUEST_LINKS]
+        ]
+        remaining = len(pull_requests) - len(pull_request_links)
+        if remaining:
+            pull_request_links.append(f"[+{remaining}]({repository_url})")
+
+        latest = repository["last"].strftime("%b %Y")
+        lines.append(
+            f"| {repository_link} | {' · '.join(pull_request_links)} | {latest} |"
+        )
+
+    remaining_repositories = len(repositories) - len(visible)
+    if remaining_repositories:
+        lines.extend(
+            [
+                "",
+                f"_Showing {len(visible)} of {len(repositories)} repositories · "
+                f"[view all merged PRs]({all_pull_requests_url()})._",
+            ]
+        )
+
+    return "\n".join(lines)
+
+
+def update_readme(repository_markdown: str) -> None:
+    source = README_PATH.read_text(encoding="utf-8")
+    start = source.index(REPOSITORIES_START)
+    end = source.index(REPOSITORIES_END, start) + len(REPOSITORIES_END)
+    replacement = (
+        f"{REPOSITORIES_START}\n{repository_markdown}\n{REPOSITORIES_END}"
+    )
+    README_PATH.write_text(
+        source[:start] + replacement + source[end:],
+        encoding="utf-8",
+    )
 
 
 def collect_data() -> dict:
@@ -316,92 +370,11 @@ def render_timeline(data: dict, theme: dict) -> str:
     )
 
 
-def render_repository_rows(data: dict) -> tuple[str, int]:
-    repositories = data["repositories"]
-    visible = repositories[:VISIBLE_REPOSITORIES]
-    row_height = 22
-    start_y = 466
-    nodes = []
-
-    for index, repository in enumerate(visible):
-        y = start_y + index * row_height
-        pull_requests = repository["pull_requests"]
-        kinds = collections.Counter(
-            pull_request_kind(pull_request["title"]) for pull_request in pull_requests
-        )
-        kind_text = " · ".join(
-            f"{kind} ×{count}"
-            for kind, count in sorted(
-                kinds.items(),
-                key=lambda item: (-item[1], item[0]),
-            )[:3]
-        )
-        if len(kinds) > 3:
-            kind_text += f" +{len(kinds) - 3}"
-
-        row_class = " repo-row-alt" if index % 2 else ""
-        nodes.append(
-            f'<g class="repo-row row-{index}{row_class}" '
-            f'style="animation-delay: {170 + index * 28}ms">'
-            f'<rect x="30" y="{y - 15}" width="780" height="20" rx="5" class="row-bg"/>'
-            f'<text x="42" y="{y}" class="repo-name">{escape(truncate(repository["name"], 38))}</text>'
-            f'<text x="374" y="{y}" class="repo-num" text-anchor="end">'
-            f"{escape(format_count(repository['stars']))}</text>"
-        )
-
-        dot_x = 424
-        for _ in pull_requests[:8]:
-            nodes.append(f'<circle cx="{dot_x}" cy="{y - 4}" r="4.2" class="merged"/>')
-            dot_x += 13
-        if len(pull_requests) > 8:
-            nodes.append(
-                f'<text x="{dot_x + 2}" y="{y}" class="repo-num">'
-                f"+{len(pull_requests) - 8}</text>"
-            )
-
-        last = repository["last"]
-        nodes.append(
-            f'<text x="584" y="{y}" class="kinds">{escape(truncate(kind_text, 20))}</text>'
-        )
-        nodes.append(
-            render_switch(
-                798,
-                y,
-                "repo-num",
-                f"{last.year}年{last.month}月",
-                last.strftime("%b %Y").upper(),
-                anchor="end",
-            )
-        )
-        nodes.append("</g>")
-
-    remaining = len(repositories) - len(visible)
-    footer_y = start_y + len(visible) * row_height + 8
-    if remaining:
-        remaining_pull_requests = sum(
-            len(repository["pull_requests"])
-            for repository in repositories[len(visible) :]
-        )
-        nodes.append(
-            render_switch(
-                40,
-                footer_y,
-                "kinds",
-                f"另有 {remaining} 个仓库 · {remaining_pull_requests} PRs",
-                f"+{remaining} more repositories · {remaining_pull_requests} PRs",
-            )
-        )
-        footer_y += 14
-
-    return "".join(nodes), footer_y
-
-
 def render_svg(data: dict, theme_name: str) -> str:
     theme = THEMES[theme_name]
     pull_request_count = len(data["pull_requests"])
     repository_count = len(data["repositories"])
-    repository_rows, footer_y = render_repository_rows(data)
-    height = max(620, footer_y + 12)
+    height = 414
 
     timeline = render_timeline(data, theme)
     subtitle = render_switch(
@@ -420,18 +393,6 @@ def render_svg(data: dict, theme_name: str) -> str:
         anchor="end",
     )
     title = render_switch(24, 50, "title", "开源贡献", "OPEN SOURCE CONTRIBUTIONS")
-
-    table_headers = "".join(
-        [
-            render_switch(
-                40, 438, "panel-label", "参与的开源仓库", "UPSTREAM REPOSITORIES"
-            ),
-            render_switch(374, 438, "axis", "星标", "STARS", anchor="end"),
-            render_switch(424, 438, "axis", "已合并 PR", "MERGED PRS"),
-            render_switch(584, 438, "axis", "类型", "TYPES"),
-            render_switch(798, 438, "axis", "最近", "LAST", anchor="end"),
-        ]
-    )
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="840" height="{height}" viewBox="0 0 840 {height}" role="img" aria-labelledby="card-title card-desc">
   <title id="card-title">Merged upstream open-source contributions by @{PROFILE_USER}</title>
@@ -460,26 +421,17 @@ def render_svg(data: dict, theme_name: str) -> str:
     .peak-line {{ stroke: {theme["muted"]}; stroke-width: 1; stroke-dasharray: 3 3; }}
     .peak {{ fill: {theme["text"]}; font-size: 12px; font-weight: 700; }}
     .legend {{ fill: {theme["muted"]}; font-size: 12px; }}
-    .panel-label {{ fill: {theme["muted"]}; font-size: 13px; font-weight: 700; letter-spacing: 0.6px; }}
-    .repo-name {{ fill: {theme["text"]}; font-size: 13px; font-weight: 650; }}
-    .repo-num {{ fill: {theme["muted"]}; font-size: 12px; }}
-    .kinds {{ fill: {theme["muted"]}; font-size: 12px; }}
-    .row-bg {{ fill: {theme["panel"]}; opacity: 0; }}
-    .repo-row-alt .row-bg {{ opacity: 0.48; }}
     .merged {{ fill: {theme["merged"]}; }}
     .state-dot {{ stroke: {theme["background"]}; stroke-width: 1.3; }}
     .card {{ fill: {theme["background"]}; stroke: {theme["border"]}; stroke-width: 1; }}
-    .divider {{ stroke: {theme["border"]}; stroke-width: 1; }}
     @keyframes enter {{
       from {{ opacity: 0; transform: translateY(4px); }}
       to {{ opacity: 1; transform: translateY(0); }}
     }}
     .header {{ animation: enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both; }}
     .plot {{ animation: enter 480ms 60ms cubic-bezier(0.22, 1, 0.36, 1) both; }}
-    .table-heading {{ animation: enter 360ms 120ms cubic-bezier(0.22, 1, 0.36, 1) both; }}
-    .repo-row {{ opacity: 0; animation: enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both; }}
     @media (prefers-reduced-motion: reduce) {{
-      .header, .plot, .table-heading, .repo-row {{ animation: none !important; opacity: 1 !important; transform: none !important; }}
+      .header, .plot {{ animation: none !important; opacity: 1 !important; transform: none !important; }}
     }}
   </style>
   <rect x="0.5" y="0.5" width="839" height="{height - 1}" rx="12" class="card"/>
@@ -491,11 +443,6 @@ def render_svg(data: dict, theme_name: str) -> str:
     {summary}
   </g>
   {timeline}
-  <g class="table-heading">
-    <line x1="24" y1="414" x2="816" y2="414" class="divider"/>
-    {table_headers}
-  </g>
-  {repository_rows}
 </svg>
 """
 
@@ -510,6 +457,8 @@ def main() -> None:
             encoding="utf-8",
         )
         print(f"Wrote {output_path}")
+    update_readme(render_repository_markdown(data))
+    print(f"Updated {README_PATH}")
 
 
 if __name__ == "__main__":
