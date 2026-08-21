@@ -31,7 +31,8 @@ THEMES = {
         "grid": "#d8dee4",
         "zero": "#ebedf0",
         "accent": "#8250df",
-        "accent_soft": "#d8b9ff",
+        "hero_start": "#8250df",
+        "hero_end": "#0969da",
         "merged": "#1a7f37",
     },
     "dark": {
@@ -43,7 +44,8 @@ THEMES = {
         "grid": "#30363d",
         "zero": "#21262d",
         "accent": "#a371f7",
-        "accent_soft": "#6e40c9",
+        "hero_start": "#d2a8ff",
+        "hero_end": "#58a6ff",
         "merged": "#3fb950",
     },
 }
@@ -275,13 +277,14 @@ def render_timeline(data: dict, theme: dict) -> str:
 
     legend_y = 392
     legend_nodes = [
-        f'<circle cx="684" cy="{legend_y - 4}" r="4.5" class="merged"/>',
+        f'<circle cx="584" cy="{legend_y - 4}" r="4.5" class="merged"/>',
         render_switch(
-            694,
+            798,
             legend_y,
             "legend",
-            f"仅统计已合并 ×{len(data['pull_requests'])}",
-            f"MERGED ONLY ×{len(data['pull_requests'])}",
+            "近 12 个月 · 仅已合并",
+            "LAST 12 MONTHS · MERGED ONLY",
+            anchor="end",
         ),
     ]
 
@@ -290,6 +293,7 @@ def render_timeline(data: dict, theme: dict) -> str:
 
     return "".join(
         [
+            '<g class="plot">',
             *grid,
             f'<polygon points="{area_points}" class="area"/>',
             f'<polyline points="{" ".join(points)}" class="trend"/>',
@@ -307,6 +311,7 @@ def render_timeline(data: dict, theme: dict) -> str:
                 anchor="middle",
             ),
             *legend_nodes,
+            "</g>",
         ]
     )
 
@@ -334,8 +339,10 @@ def render_repository_rows(data: dict) -> tuple[str, int]:
         if len(kinds) > 3:
             kind_text += f" +{len(kinds) - 3}"
 
+        row_class = " repo-row-alt" if index % 2 else ""
         nodes.append(
-            f'<g class="repo-row row-{index}">'
+            f'<g class="repo-row row-{index}{row_class}" '
+            f'style="animation-delay: {170 + index * 28}ms">'
             f'<rect x="30" y="{y - 15}" width="780" height="20" rx="5" class="row-bg"/>'
             f'<text x="42" y="{y}" class="repo-name">{escape(truncate(repository["name"], 38))}</text>'
             f'<text x="374" y="{y}" class="repo-num" text-anchor="end">'
@@ -354,7 +361,7 @@ def render_repository_rows(data: dict) -> tuple[str, int]:
 
         last = repository["last"]
         nodes.append(
-            f'<text x="584" y="{y}" class="kinds">{escape(truncate(kind_text, 23))}</text>'
+            f'<text x="584" y="{y}" class="kinds">{escape(truncate(kind_text, 20))}</text>'
         )
         nodes.append(
             render_switch(
@@ -401,17 +408,18 @@ def render_svg(data: dict, theme_name: str) -> str:
         43,
         72,
         "subtitle",
-        f"已合并的社区 Pull Requests · @{PROFILE_USER}",
-        f"MERGED COMMUNITY PULL REQUESTS · @{PROFILE_USER}",
+        f"上游开源贡献 · @{PROFILE_USER}",
+        f"UPSTREAM OPEN SOURCE · @{PROFILE_USER}",
     )
     summary = render_switch(
         816,
         74,
         "hero-label",
-        f"{repository_count} 个上游项目 · 全部已合并",
-        f"{repository_count} UPSTREAM PROJECTS · ALL MERGED",
+        f"个已合并 PR · {repository_count} 个上游项目",
+        f"MERGED PRS · {repository_count} UPSTREAM PROJECTS",
         anchor="end",
     )
+    title = render_switch(24, 50, "title", "开源贡献", "OPEN SOURCE CONTRIBUTIONS")
 
     table_headers = "".join(
         [
@@ -425,11 +433,13 @@ def render_svg(data: dict, theme_name: str) -> str:
         ]
     )
 
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="840" height="{height}" viewBox="0 0 840 {height}" role="img" aria-label="Open source contributions: {pull_request_count} merged pull requests across {repository_count} upstream projects">
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="840" height="{height}" viewBox="0 0 840 {height}" role="img" aria-labelledby="card-title card-desc">
+  <title id="card-title">Merged upstream open-source contributions by @{PROFILE_USER}</title>
+  <desc id="card-desc">{pull_request_count} merged pull requests across {repository_count} repositories, excluding repositories owned by @{PROFILE_USER}.</desc>
   <defs>
-    <linearGradient id="hero-gradient" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="{theme["accent"]}"/>
-      <stop offset="100%" stop-color="{theme["accent_soft"]}"/>
+    <linearGradient id="hero-gradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="{theme["hero_start"]}"/>
+      <stop offset="100%" stop-color="{theme["hero_end"]}"/>
     </linearGradient>
     <linearGradient id="area-gradient" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="{theme["accent"]}" stop-opacity="0.28"/>
@@ -437,39 +447,54 @@ def render_svg(data: dict, theme_name: str) -> str:
     </linearGradient>
   </defs>
   <style>
-    text {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }}
-    .title {{ fill: {theme["text"]}; font-size: 20px; font-weight: 700; letter-spacing: 1.2px; }}
-    .subtitle {{ fill: {theme["muted"]}; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 600; }}
-    .hero {{ fill: url(#hero-gradient); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 37px; font-weight: 800; }}
-    .hero-label {{ fill: {theme["muted"]}; font-size: 12px; font-weight: 600; letter-spacing: 0.6px; }}
-    .axis {{ fill: {theme["muted"]}; font-size: 11px; }}
+    text {{ font-family: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Noto Sans Mono CJK SC", "PingFang SC", monospace; font-variant-numeric: tabular-nums; }}
+    .title {{ fill: {theme["text"]}; font-size: 18px; font-weight: 750; letter-spacing: 1.1px; }}
+    .subtitle {{ fill: {theme["muted"]}; font-size: 12px; font-weight: 650; }}
+    .hero {{ fill: url(#hero-gradient); font-size: 50px; font-weight: 800; letter-spacing: -2px; }}
+    .hero-label {{ fill: {theme["muted"]}; font-size: 12px; font-weight: 650; letter-spacing: 0.3px; }}
+    .axis {{ fill: {theme["muted"]}; font-size: 12px; }}
     .grid {{ stroke: {theme["grid"]}; stroke-width: 1; stroke-dasharray: 3 6; }}
     .area {{ fill: url(#area-gradient); }}
     .trend {{ fill: none; stroke: {theme["accent"]}; stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }}
     .bar {{ fill: {theme["accent"]}; opacity: 0.16; }}
     .peak-line {{ stroke: {theme["muted"]}; stroke-width: 1; stroke-dasharray: 3 3; }}
-    .peak {{ fill: {theme["text"]}; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 700; }}
-    .legend {{ fill: {theme["muted"]}; font-size: 11px; }}
-    .panel-label {{ fill: {theme["muted"]}; font-size: 12px; font-weight: 700; letter-spacing: 0.8px; }}
-    .repo-name {{ fill: {theme["text"]}; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; font-weight: 650; }}
-    .repo-num {{ fill: {theme["muted"]}; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; }}
-    .kinds {{ fill: {theme["muted"]}; font-size: 11px; }}
+    .peak {{ fill: {theme["text"]}; font-size: 12px; font-weight: 700; }}
+    .legend {{ fill: {theme["muted"]}; font-size: 12px; }}
+    .panel-label {{ fill: {theme["muted"]}; font-size: 13px; font-weight: 700; letter-spacing: 0.6px; }}
+    .repo-name {{ fill: {theme["text"]}; font-size: 13px; font-weight: 650; }}
+    .repo-num {{ fill: {theme["muted"]}; font-size: 12px; }}
+    .kinds {{ fill: {theme["muted"]}; font-size: 12px; }}
     .row-bg {{ fill: {theme["panel"]}; opacity: 0; }}
-    .repo-row:hover .row-bg {{ opacity: 1; }}
+    .repo-row-alt .row-bg {{ opacity: 0.48; }}
     .merged {{ fill: {theme["merged"]}; }}
     .state-dot {{ stroke: {theme["background"]}; stroke-width: 1.3; }}
     .card {{ fill: {theme["background"]}; stroke: {theme["border"]}; stroke-width: 1; }}
     .divider {{ stroke: {theme["border"]}; stroke-width: 1; }}
+    @keyframes enter {{
+      from {{ opacity: 0; transform: translateY(4px); }}
+      to {{ opacity: 1; transform: translateY(0); }}
+    }}
+    .header {{ animation: enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both; }}
+    .plot {{ animation: enter 480ms 60ms cubic-bezier(0.22, 1, 0.36, 1) both; }}
+    .table-heading {{ animation: enter 360ms 120ms cubic-bezier(0.22, 1, 0.36, 1) both; }}
+    .repo-row {{ opacity: 0; animation: enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both; }}
+    @media (prefers-reduced-motion: reduce) {{
+      .header, .plot, .table-heading, .repo-row {{ animation: none !important; opacity: 1 !important; transform: none !important; }}
+    }}
   </style>
   <rect x="0.5" y="0.5" width="839" height="{height - 1}" rx="12" class="card"/>
-  <text x="24" y="50" class="title">OPEN SOURCE CONTRIBUTIONS</text>
-  <circle cx="29" cy="68" r="4" fill="{theme["accent"]}"/>
-  {subtitle}
-  <text x="816" y="54" class="hero" text-anchor="end">{pull_request_count} MERGED</text>
-  {summary}
+  <g class="header">
+    {title}
+    <circle cx="29" cy="68" r="4" fill="{theme["accent"]}"/>
+    {subtitle}
+    <text x="816" y="58" class="hero" text-anchor="end">{pull_request_count}</text>
+    {summary}
+  </g>
   {timeline}
-  <line x1="24" y1="414" x2="816" y2="414" class="divider"/>
-  {table_headers}
+  <g class="table-heading">
+    <line x1="24" y1="414" x2="816" y2="414" class="divider"/>
+    {table_headers}
+  </g>
   {repository_rows}
 </svg>
 """

@@ -13,11 +13,11 @@ I focus on agent runtime correctness, observability, and reproducible evaluation
 ## Open-source activity
 
 <p align="center">
-  <a href="https://github.com/search?q=is%3Apr+author%3Atlysanhuo+-user%3Atlysanhuo+is%3Amerged&type=pullrequests">
+  <a href="https://github.com/search?q=type%3Apr+author%3Atlysanhuo+-user%3Atlysanhuo+is%3Amerged&type=pullrequests" title="View verified merged upstream pull requests">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="./assets/oss-contributions-dark.svg">
       <source media="(prefers-color-scheme: light)" srcset="./assets/oss-contributions-light.svg">
-      <img alt="Merged open-source contributions by tlysanhuo" src="./assets/oss-contributions-light.svg" width="840">
+      <img alt="Verified merged upstream contributions by tlysanhuo" src="./assets/oss-contributions-light.svg" width="840">
     </picture>
   </a>
 </p>
